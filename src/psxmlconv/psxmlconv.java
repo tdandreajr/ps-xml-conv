@@ -7,6 +7,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import com.sun.org.apache.xerces.internal.parsers.DOMParser;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -52,6 +56,15 @@ public class psxmlconv {
       }
     }
     
+    for (File f : ps_project_files) {
+      File new_file = new File(path + "/copy_dir/" + f.getName());
+      try {
+        Files.copy(f.toPath(), new_file.toPath());
+      } catch (IOException ex) {
+        Logger.getLogger(psxmlconv.class.getName()).log(Level.SEVERE, null, ex);
+      }
+    }
+    
     System.out.println("=============================================");
     for (File f : ps_project_files) {
       System.out.println(f.getAbsolutePath());
@@ -72,7 +85,6 @@ public class psxmlconv {
               return node;
           }
       }
-
       return null;
   }
 
