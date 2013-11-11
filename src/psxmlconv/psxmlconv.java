@@ -4,18 +4,17 @@
  */
 package psxmlconv;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-
+import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 /**
  *
  * @author tdandrea
@@ -26,58 +25,106 @@ public class psxmlconv {
    * @param args the command line arguments
    */
   public static void main(String[] args) {
+    Boolean verbose_flag = true;
     String path = System.getProperty("user.dir"); 
+    path = path + "/LXDMOCOMPARE9_04_13";
+    String copyToDir = "/copy_dir/";
     ArrayList<String> ps_filelist = new ArrayList<>();
 
-    if (project_exists(path)!= true) {
+    if (true == project_exists(path)) {
+      System.out.println("Project definition exists, begin file loop.");
+    }
+    else {
       System.out.println("Project XML Definition could not be found in the project root directory.");
       System.exit(1);
     }
-    System.out.println("Project definition exists, begin file loop.");
+    clear_copy_dir(path + copyToDir);
     File project_path = new File(path);
-    ArrayList<File> files = new ArrayList<>(Arrays.asList(project_path.listFiles()));
-    ArrayList<File> directories = new ArrayList<>();
-    for (File f : files) {
-      if (f.isDirectory()) {
-        directories.add(f);
-      }
+    ArrayList<File> directories = get_dir_list(project_path, copyToDir);
+    ArrayList<File> ps_project_files = get_ps_project_files(directories, verbose_flag);
+    if(verbose_flag) {
+      show_project_file_list(ps_project_files);
     }
-    
-    ArrayList<File> ps_project_files = new ArrayList<>();
-    for (File f : directories) {
-      System.out.println(f.getAbsolutePath());
-      System.out.println("    " + f.getName());
-      File filePath = new File(f.getAbsolutePath());
-      ArrayList<File> xmlfiles = new ArrayList<>(Arrays.asList(filePath.listFiles()));
-      for (File x : xmlfiles) {
-        if (!("Index.xml".equalsIgnoreCase(x.getName()))) {
-          ps_project_files.add(x);
-        }
-      }
-    }
-    
-    for (File f : ps_project_files) {
-      File new_file = new File(path + "/copy_dir/" + f.getName());
-      try {
-        Files.copy(f.toPath(), new_file.toPath());
-      } catch (IOException ex) {
-        Logger.getLogger(psxmlconv.class.getName()).log(Level.SEVERE, null, ex);
-      }
-    }
-    
-    System.out.println("=============================================");
-    for (File f : ps_project_files) {
-      System.out.println(f.getAbsolutePath());
-    }
-    System.out.println("=============================================");
+    copy_for_processing(ps_project_files, path + copyToDir);
     System.exit(0);
   }
   
-  public static boolean project_exists(String p) {
+  private static void show_project_file_list(ArrayList<File> files) {
+    System.out.println("=============================================");
+    for (File f : files) {
+      System.out.println(f.getAbsolutePath());
+    }
+    System.out.println("=============================================");
+  }
+  
+  private static void copy_for_processing(ArrayList<File> files, String copy_path) {
+    boolean error_flag = false;
+    for (File f : files) {
+      String newFileName = f.getName().replaceAll(" ","_").toUpperCase();
+      Integer lastUnderscore = newFileName.lastIndexOf("_");
+      Integer lastFileSuffix = newFileName.lastIndexOf("XML");
+      String fileNumber = newFileName.substring(lastUnderscore + 1, lastFileSuffix);
+      String newFileNumber = "0000".substring(0,5 - fileNumber.length()) + fileNumber;
+      newFileName = newFileName.substring(0, lastUnderscore + 1) + newFileNumber + newFileName.substring(lastFileSuffix);
+      File new_file = new File(copy_path + newFileName);
+      try {
+        Files.copy(f.toPath(), new_file.toPath());
+      } catch (IOException ex) {
+        error_flag = true;
+        Logger.getLogger(psxmlconv.class.getName()).log(Level.SEVERE, null, ex);
+      }
+    }
+    if (true == error_flag) {
+      System.out.println("=============================================");
+      System.out.println("An error has occurred during file copy processing.");
+      System.exit(1);
+    }
+  }
+  
+  private static boolean project_exists(String p) {
     File project_file = new File(p + "/project.xml");
     return project_file.exists();
   }
- 
+  
+  private static ArrayList get_ps_project_files(ArrayList<File> directories, Boolean verbose) {
+    ArrayList<File> xml_files = new ArrayList<>();
+    for (File dirs : directories) {
+      if (verbose) {
+        System.out.println(dirs.getAbsolutePath());
+        System.out.println("    " + dirs.getName());
+      }
+      File filePath = new File(dirs.getAbsolutePath());
+      ArrayList<File> files = new ArrayList<>(Arrays.asList(filePath.listFiles()));
+      for (File fls : files) {
+        if (!("Index.xml".equalsIgnoreCase(fls.getName()))) {
+          xml_files.add(fls);
+        }
+      }
+    }
+    return xml_files;
+  }
+  
+  private static void clear_copy_dir(String copy_dir) {
+    File filePath = new File(copy_dir);
+    ArrayList<File> files = new ArrayList<>(Arrays.asList(filePath.listFiles()));
+    for (File f : files) {
+      boolean delete = f.delete();
+    }
+  }
+  
+  private static ArrayList get_dir_list(File directory_lookup, String copy_dir) {
+    ArrayList<File> files = new ArrayList<>(Arrays.asList(directory_lookup.listFiles()));
+    ArrayList<File> directories = new ArrayList<>();
+    for (File f : files) {
+      if (f.isDirectory()) {
+        if (!f.getName().toUpperCase().contains(copy_dir.replace("/", "").toUpperCase())) {
+          directories.add(f);
+        }
+      }
+    }
+    return directories;
+  }
+  
   protected Node getNode(String tagName, NodeList nodes) {
       for ( int x = 0; x < nodes.getLength(); x++ ) {
           Node node = nodes.item(x);
