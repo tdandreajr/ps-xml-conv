@@ -99,8 +99,38 @@ public class psxmlconv {
 
     /* Loop through unique types. If count is 1, just copy file directly.*/
     for (Map.Entry entry : uniqueTypes.entrySet()){
-
+      System.out.println(">>>>" + entry.getKey());
+      try {
+        SAXParserFactory factory = SAXParserFactory.newInstance();
+        SAXParser saxParser = factory.newSAXParser();
+        DefaultHandler handler = new DefaultHandler() {
+          String tagname = "";
+          public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
+            System.out.println("        Start Element :" + qName);
+            tagname = qName;
+            super.startElement(uri, localName, qName, attributes);
+          }
+          public void endElement(String uri, String localName, String qName) throws SAXException {
+            System.out.println("        End Element :" + qName);
+            tagname = "";
+            super.endElement(uri, localName, qName);
+          }
+          public void characters(char[] ch, int start, int length) throws SAXException {
+            if ("item".equalsIgnoreCase(tagname)){
+              String tmpString = "";
+              for (int j = 0; j < length; j++) {
+                tmpString += String.valueOf(ch[start + j]);
+              }
+              System.out.println("START[" + String.valueOf(start) + "] LENGTH[" + String.valueOf(length) + "] VALUE[" + tmpString + "]");
+            }
+          }
+        };
+        saxParser.parse(path + copyDir + entry.getKey() + "_0001.XML", handler);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
     }
+
    
     System.out.println("The project conversion has completed successfully.");
     System.out.println("The GIT files are located in the git conversion directory.");
@@ -108,6 +138,45 @@ public class psxmlconv {
     System.exit(0);
   }
 
+  private class ps_xml_hdr_handler extends DefaultHandler {
+    StringBuffer textBuffer;
+    Boolean hdrFound = false;
+    public void startElement(String namespaceURI,String sName,String qName,Attributes attrs) throws SAXException{
+      if (qName.equals("object_type")){
+        hdrFound = true;
+      }
+    }
+  }
+  
+  private class ps_xml_dtl_handler extends DefaultHandler {
+    StringBuffer textBuffer;
+    boolean hdrFound = false;
+    public void startElement(String namespaceURI,String sName,String qName,Attributes attrs) throws SAXException{
+      if (qName.equals("object_type")){
+        hdrFound = true;
+      }
+    }
+  }
+  
+  private class ps_xml_ftr_handler extends DefaultHandler {
+    StringBuffer textBuffer;
+    protected boolean hdrFound = false;
+    protected boolean ftrFound = false;
+    public void startElement(String namespaceURI, String sName, String qName, Attributes attrs) throws SAXException{
+      if (qName.equals("object_type")){
+        hdrFound = true;
+      }
+    }
+    public void endElement(String namespaceURI, String sName, String qName, Attributes attrs) throws SAXException{
+      if (hdrFound && qName.equals("object_type")){
+        ftrFound = true;
+      }
+      if (ftrFound) {
+        
+      }
+    }
+  }
+ 
   private static boolean clear_dir(String dir, boolean verboseFlag) {
     File filePath = new File(dir);
     if (filePath.exists()) {
