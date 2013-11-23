@@ -5,19 +5,23 @@
 package psxmlconv;
 
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.LinkedList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
-import org.xml.sax.Attributes;
-import org.xml.sax.SAXException;
-import org.xml.sax.helpers.DefaultHandler;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamReader;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamWriter;
+import javax.xml.stream.events.XMLEvent;
+import com.sun.xml.internal.txw2.output.IndentingXMLStreamWriter;
 
 
 /**
@@ -97,37 +101,80 @@ public class psxmlconv {
       show_unique_types_list(uniqueTypes);
     }
 
-    /* Loop through unique types. If count is 1, just copy file directly.*/
+    /* Loop through unique types. If iterator is 1, get header and footer.
+    *  If iterator = 1, write out header.
+    *  If iterator <= counter write out all details.
+    *  If iterator = counter, writ out footer.
+    */
+    int fileCount = 0;
     for (Map.Entry entry : uniqueTypes.entrySet()){
-      System.out.println(">>>>" + entry.getKey());
+      if (fileCount > 2 || Integer.valueOf(entry.getValue().toString()) > 1){
+        System.exit(1);
+      }
+      Integer fileNumber = 0;
+      fileCount++;
+      System.out.println("File Key: >>>>" + entry.getKey());
+      XMLInputFactory xmlif = XMLInputFactory.newInstance();
+      XMLOutputFactory xmlof = XMLOutputFactory.newInstance();
       try {
-        SAXParserFactory factory = SAXParserFactory.newInstance();
-        SAXParser saxParser = factory.newSAXParser();
-        DefaultHandler handler = new DefaultHandler() {
-          String tagname = "";
-          public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
-            System.out.println("        Start Element :" + qName);
-            tagname = qName;
-            super.startElement(uri, localName, qName, attributes);
-          }
-          public void endElement(String uri, String localName, String qName) throws SAXException {
-            System.out.println("        End Element :" + qName);
-            tagname = "";
-            super.endElement(uri, localName, qName);
-          }
-          public void characters(char[] ch, int start, int length) throws SAXException {
-            if ("item".equalsIgnoreCase(tagname)){
-              String tmpString = "";
-              for (int j = 0; j < length; j++) {
-                tmpString += String.valueOf(ch[start + j]);
+      fileNumber++;
+      XMLStreamReader reader = xmlif.createXMLStreamReader(new FileReader(path + copyDir + entry.getKey() + "_0001.XML"));
+      XMLStreamWriter xwriter = xmlof.createXMLStreamWriter(new FileWriter(path + copyDir + entry.getKey() + ".XML"));
+      IndentingXMLStreamWriter writer = new IndentingXMLStreamWriter(xwriter);
+      writer.setIndentStep(" ");
+      LinkedList<String> nodeStack = new LinkedList<>();
+      int numBetweenElements = 0;
+      String lastElement = "";
+      int level = 0;
+      String spacing = "  ";
+      
+      if (fileNumber.equals(1)) {
+        System.out.println("Starting document.");
+        writer.writeStartDocument();
+      }
+      while (reader.hasNext()) {
+        int eventType = reader.next();
+        switch(eventType) {
+          case XMLEvent.START_ELEMENT:
+            level = level + 1;
+            if (level > 1){
+              String tmpSpacing = "";
+              for(int j=1; j<level; j++){
+                tmpSpacing = tmpSpacing + spacing;
               }
-              System.out.println("START[" + String.valueOf(start) + "] LENGTH[" + String.valueOf(length) + "] VALUE[" + tmpString + "]");
+              writer.writeCharacters("\n"+spacing);
             }
-          }
-        };
-        saxParser.parse(path + copyDir + entry.getKey() + "_0001.XML", handler);
+            writer.writeStartElement(reader.getLocalName());
+            for (int i=0; i<reader.getAttributeCount(); i++) {
+              writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+            }
+            break;
+          case XMLEvent.END_ELEMENT:
+            if (level > 1){
+              String tmpSpacing = "";
+              for(int j=1; j<level; j++){
+                tmpSpacing+=spacing;
+              }
+              writer.writeCharacters("\n"+spacing);
+            }
+            level--;
+            writer.writeEndElement();
+            break;
+          case XMLEvent.CHARACTERS:
+            if (!reader.isWhiteSpace()) {
+              writer.writeCharacters(reader.getText());
+            }
+            break;
+        }
+      }
+      writer.flush();
+      if (fileNumber.equals(Integer.valueOf(entry.getValue().toString()))){
+        writer.close();
+        System.out.println("Cloing file.");
+      }
+      reader.close();
       } catch (Exception e) {
-        e.printStackTrace();
+        System.out.println(e.toString());
       }
     }
 
@@ -138,45 +185,6 @@ public class psxmlconv {
     System.exit(0);
   }
 
-  private class ps_xml_hdr_handler extends DefaultHandler {
-    StringBuffer textBuffer;
-    Boolean hdrFound = false;
-    public void startElement(String namespaceURI,String sName,String qName,Attributes attrs) throws SAXException{
-      if (qName.equals("object_type")){
-        hdrFound = true;
-      }
-    }
-  }
-  
-  private class ps_xml_dtl_handler extends DefaultHandler {
-    StringBuffer textBuffer;
-    boolean hdrFound = false;
-    public void startElement(String namespaceURI,String sName,String qName,Attributes attrs) throws SAXException{
-      if (qName.equals("object_type")){
-        hdrFound = true;
-      }
-    }
-  }
-  
-  private class ps_xml_ftr_handler extends DefaultHandler {
-    StringBuffer textBuffer;
-    protected boolean hdrFound = false;
-    protected boolean ftrFound = false;
-    public void startElement(String namespaceURI, String sName, String qName, Attributes attrs) throws SAXException{
-      if (qName.equals("object_type")){
-        hdrFound = true;
-      }
-    }
-    public void endElement(String namespaceURI, String sName, String qName, Attributes attrs) throws SAXException{
-      if (hdrFound && qName.equals("object_type")){
-        ftrFound = true;
-      }
-      if (ftrFound) {
-        
-      }
-    }
-  }
- 
   private static boolean clear_dir(String dir, boolean verboseFlag) {
     File filePath = new File(dir);
     if (filePath.exists()) {
