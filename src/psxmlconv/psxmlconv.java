@@ -121,48 +121,40 @@ public class psxmlconv {
       XMLStreamReader reader = xmlif.createXMLStreamReader(new FileReader(path + copyDir + entry.getKey() + "_0001.XML"));
       XMLStreamWriter xwriter = xmlof.createXMLStreamWriter(new FileWriter(path + copyDir + entry.getKey() + ".XML"));
       IndentingXMLStreamWriter writer = new IndentingXMLStreamWriter(xwriter);
-      writer.setIndentStep(" ");
-      LinkedList<String> nodeStack = new LinkedList<>();
-      int numBetweenElements = 0;
-      String lastElement = "";
-      int level = 0;
-      String spacing = "  ";
-      
+      writer.setIndentStep("  ");
       if (fileNumber.equals(1)) {
         System.out.println("Starting document.");
         writer.writeStartDocument();
       }
+      String currElement = "";
       while (reader.hasNext()) {
         int eventType = reader.next();
         switch(eventType) {
           case XMLEvent.START_ELEMENT:
-            level = level + 1;
-            if (level > 1){
-              String tmpSpacing = "";
-              for(int j=1; j<level; j++){
-                tmpSpacing = tmpSpacing + spacing;
-              }
-              writer.writeCharacters("\n"+spacing);
-            }
+            currElement = reader.getLocalName();
             writer.writeStartElement(reader.getLocalName());
             for (int i=0; i<reader.getAttributeCount(); i++) {
-              writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+              if("object_type".equals(reader.getLocalName())){
+                String attrName = reader.getAttributeLocalName(i);
+                if("firstitem".equals(attrName) || "items".equals(attrName)) {
+                  writer.writeAttribute(reader.getAttributeLocalName(i), "0");
+                } else {
+                  writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+                }
+              } else {
+                writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+              }
             }
             break;
           case XMLEvent.END_ELEMENT:
-            if (level > 1){
-              String tmpSpacing = "";
-              for(int j=1; j<level; j++){
-                tmpSpacing+=spacing;
-              }
-              writer.writeCharacters("\n"+spacing);
-            }
-            level--;
+            currElement = "";
             writer.writeEndElement();
             break;
           case XMLEvent.CHARACTERS:
             if (!reader.isWhiteSpace()) {
-              writer.writeCharacters(reader.getText());
+              if (!"rundate".equals(currElement)){
+                writer.writeCharacters(reader.getText());
+              }
             }
             break;
         }
