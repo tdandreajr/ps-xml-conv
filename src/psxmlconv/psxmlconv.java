@@ -106,65 +106,108 @@ public class psxmlconv {
     *  If iterator <= counter write out all details.
     *  If iterator = counter, writ out footer.
     */
-    int fileCount = 0;
+    XMLInputFactory xmlif = XMLInputFactory.newInstance();
+    XMLOutputFactory xmlof = XMLOutputFactory.newInstance();
     for (Map.Entry entry : uniqueTypes.entrySet()){
-      if (fileCount > 2 || Integer.valueOf(entry.getValue().toString()) > 1){
-        System.exit(1);
+      if (verboseFlag) {
+        System.out.println("File Key: " + entry.getKey());
       }
-      Integer fileNumber = 0;
-      fileCount++;
-      System.out.println("File Key: >>>>" + entry.getKey());
-      XMLInputFactory xmlif = XMLInputFactory.newInstance();
-      XMLOutputFactory xmlof = XMLOutputFactory.newInstance();
+      Integer fileCount = Integer.valueOf(entry.getValue().toString());
       try {
-      fileNumber++;
-      XMLStreamReader reader = xmlif.createXMLStreamReader(new FileReader(path + copyDir + entry.getKey() + "_0001.XML"));
-      XMLStreamWriter xwriter = xmlof.createXMLStreamWriter(new FileWriter(path + copyDir + entry.getKey() + ".XML"));
-      IndentingXMLStreamWriter writer = new IndentingXMLStreamWriter(xwriter);
-      writer.setIndentStep("  ");
-      if (fileNumber.equals(1)) {
-        System.out.println("Starting document.");
-        writer.writeStartDocument();
-      }
-      String currElement = "";
-      while (reader.hasNext()) {
-        int eventType = reader.next();
-        switch(eventType) {
-          case XMLEvent.START_ELEMENT:
-            currElement = reader.getLocalName();
-            writer.writeStartElement(reader.getLocalName());
-            for (int i=0; i<reader.getAttributeCount(); i++) {
-              if("object_type".equals(reader.getLocalName())){
-                String attrName = reader.getAttributeLocalName(i);
-                if("firstitem".equals(attrName) || "items".equals(attrName)) {
-                  writer.writeAttribute(reader.getAttributeLocalName(i), "0");
-                } else {
-                  writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+        XMLStreamWriter xwriter = xmlof.createXMLStreamWriter(new FileWriter(path + gitDir + entry.getKey() + ".XML"));
+        IndentingXMLStreamWriter writer = new IndentingXMLStreamWriter(xwriter);
+        for (Integer fileNumber=1; fileNumber <= fileCount; fileNumber++)
+        {
+          XMLStreamReader reader = xmlif.createXMLStreamReader(new FileReader(path + copyDir + entry.getKey() + "_" + get_formatted_file_number(fileNumber.toString()) + ".XML"));
+          writer.setIndentStep("  ");
+          if (fileNumber.equals(1)) {
+            writer.writeStartDocument();
+          }
+          String currElement = "";
+          Integer nodeDepth = 0;
+          while (reader.hasNext()) {
+            Integer eventType = reader.next();
+            switch(eventType) {
+              case XMLEvent.START_ELEMENT:
+                nodeDepth++;
+                currElement = reader.getLocalName();
+                if(fileNumber.equals(1) && nodeDepth.equals(1)){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                  }
                 }
-              } else {
-                writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
-              }
+                if(fileNumber.equals(1) && nodeDepth.equals(2)){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    if(currElement.equals("object_type")){
+                      String attrName = reader.getAttributeLocalName(attr);
+                      if("firstitem".equals(attrName) || "items".equals(attrName)) {
+                        writer.writeAttribute(reader.getAttributeLocalName(attr), "0");
+                      } else {
+                        writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                      }
+                    } else {
+                      writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                    }
+                  }
+                }
+                if(fileNumber.equals(1) && nodeDepth.equals(3) && !currElement.equals("item")){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                  }
+                }
+                if(nodeDepth>3 || (nodeDepth.equals(3) && currElement.equals("item"))){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                  }
+                }
+                break;
+              case XMLEvent.END_ELEMENT:
+                currElement = reader.getLocalName();
+                if(fileNumber.equals(1) && nodeDepth.equals(2) && currElement.equals("rundate")){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(fileCount) && nodeDepth.equals(1)){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(fileCount) && nodeDepth.equals(2) && currElement.equals("object_type")){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(1) && nodeDepth.equals(3) && !currElement.equals("item")){
+                  currElement = "";
+                  writer.writeEndElement();
+                } 
+                if(nodeDepth>3 || (nodeDepth.equals(3) && currElement.equals("item"))) {
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                nodeDepth--;
+                break;
+              case XMLEvent.CHARACTERS:
+                if (!reader.isWhiteSpace()) {
+                  if (fileNumber.equals(1) && nodeDepth.equals(2) && !currElement.equals("rundate")) {
+                    writer.writeCharacters(reader.getText());
+                  }
+                  if(fileNumber.equals(1) && nodeDepth.equals(3)){
+                    writer.writeCharacters(reader.getText());
+                  }
+                  if (nodeDepth > 3){
+                    writer.writeCharacters(reader.getText());
+                  }
+                }
+                break;
             }
-            break;
-          case XMLEvent.END_ELEMENT:
-            currElement = "";
-            writer.writeEndElement();
-            break;
-          case XMLEvent.CHARACTERS:
-            if (!reader.isWhiteSpace()) {
-              if (!"rundate".equals(currElement)){
-                writer.writeCharacters(reader.getText());
-              }
-            }
-            break;
+          }
+          writer.flush();
+          reader.close();
         }
-      }
-      writer.flush();
-      if (fileNumber.equals(Integer.valueOf(entry.getValue().toString()))){
         writer.close();
-        System.out.println("Cloing file.");
-      }
-      reader.close();
       } catch (Exception e) {
         System.out.println(e.toString());
       }
