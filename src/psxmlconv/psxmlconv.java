@@ -5,6 +5,8 @@
 package psxmlconv;
 
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -13,21 +15,13 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.TransformerFactoryConfigurationError;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.Document;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamReader;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamWriter;
+import javax.xml.stream.events.XMLEvent;
+import com.sun.xml.internal.txw2.output.IndentingXMLStreamWriter;
+
 
 /**
  *
@@ -49,13 +43,13 @@ public class psxmlconv {
     gitDir = gitDir + slash;
     if (args.length < 2 || args.length > 3) {
       System.err.println("Invalid nuber of arguments provided.");
-      show_help();
+      usage();
       System.exit(1);
     }
     if ("-d".equals(args[0])) {
       path = args[1];
     } else {
-      show_help();
+      usage();
       System.exit(1);
     }
     if (args.length == 3) {
@@ -63,13 +57,12 @@ public class psxmlconv {
         verboseFlag = true;
       } else {
         System.err.println("Invalid arguments values provided.");
-        show_help();
+        usage();
         System.exit(1);
       }
     }
 
     /* Test for project definition */
-    ArrayList<String> ps_filelist = new ArrayList<>();
     if (project_exists(path)) {
       if (verboseFlag) {
         System.out.println("Project definition exists, begin file loop.");
@@ -83,7 +76,7 @@ public class psxmlconv {
     if (!clear_dir(path + copyDir, verboseFlag) || !clear_dir(path + gitDir, verboseFlag)) {
       System.exit(1);
     }
-
+    
     /* Get directories and files for processing */
     File project_path = new File(path);
     ArrayList<File> directories = get_dir_list(project_path, copyDir);
@@ -102,63 +95,127 @@ public class psxmlconv {
     /* Start work inside working directory */
     File working_path = new File(path + copyDir);
     ArrayList<File> workingFiles = new ArrayList<>(Arrays.asList(working_path.listFiles()));
-    TreeMap<String, Integer> uniqueTypes = new TreeMap<>();
-    /* Get unique file names */
-    String lastUniqName = "";
-    for (File w : workingFiles) {
-      String psType = get_pstype(w.getName());
-      if (lastUniqName.equals(psType)) {
-        uniqueTypes.put(psType, uniqueTypes.get(psType) + 1);
-      } else {
-        uniqueTypes.put(psType, 1);
-        lastUniqName = psType;
-      }
-    }
+    TreeMap<String, Integer> uniqueTypes = get_unique_file_types(workingFiles);
     if (verboseFlag && !uniqueTypes.isEmpty()) {
       show_unique_types_list(uniqueTypes);
     }
 
-    /* Loop through unique types. If count is 1, just copy file directly.*/
+    /* Loop through unique types. If iterator is 1, get header and footer.
+    *  If iterator = 1, write out header.
+    *  If iterator <= counter write out all details.
+    *  If iterator = counter, writ out footer.
+    */
+    XMLInputFactory xmlif = XMLInputFactory.newInstance();
+    XMLOutputFactory xmlof = XMLOutputFactory.newInstance();
     for (Map.Entry entry : uniqueTypes.entrySet()){
-        try {
-        Document finalDoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
-        for (int i = 0; i < Integer.valueOf(entry.getValue().toString()); i++) {
-          System.out.println(entry.getKey().toString() + ":" + entry.getValue().toString());
-          String sourceDocPath = path + copyDir + entry.getKey() + "_" + get_formatted_file_number(String.valueOf(i+1)) + ".XML";
-          Document sourceDoc;
-          sourceDoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(sourceDocPath);
-          if (verboseFlag) {
-              System.out.println("Processing file " + entry.getValue());
-           }
-          if (Integer.valueOf(0).equals(i)){
-            Node rundate = sourceDoc.getElementsByTagName("rundate").item(0);
-            rundate.setTextContent("DD MON YY : HH MM PM");
-            Node object_type = sourceDoc.getElementsByTagName("object_type").item(0);
-            NamedNodeMap attr = object_type.getAttributes();
-            Node nodeAttr = attr.getNamedItem("firstitem");
-            nodeAttr.setTextContent("firstitem_val");
-            nodeAttr = attr.getNamedItem("items");
-            nodeAttr.setTextContent("items_val");
-            finalDoc.appendChild(finalDoc.adoptNode(sourceDoc.getFirstChild().cloneNode(true)));
+      if (verboseFlag) {
+        System.out.println("File Key: " + entry.getKey());
+      }
+      Integer fileCount = Integer.valueOf(entry.getValue().toString());
+      try {
+        XMLStreamWriter xwriter = xmlof.createXMLStreamWriter(new FileWriter(path + gitDir + entry.getKey() + ".XML"));
+        IndentingXMLStreamWriter writer = new IndentingXMLStreamWriter(xwriter);
+        for (Integer fileNumber=1; fileNumber <= fileCount; fileNumber++)
+        {
+          XMLStreamReader reader = xmlif.createXMLStreamReader(new FileReader(path + copyDir + entry.getKey() + "_" + get_formatted_file_number(fileNumber.toString()) + ".XML"));
+          writer.setIndentStep("  ");
+          if (fileNumber.equals(1)) {
+            writer.writeStartDocument();
           }
-          else {
-            sourceDoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(sourceDocPath);
-            NodeList finalItemList = finalDoc.getElementsByTagName("item");
-            Node finalItem = finalItemList.item(finalItemList.getLength()-1);
-            NodeList sourceItemList = sourceDoc.getElementsByTagName("item");
-            for (int j=0; j<sourceItemList.getLength(); j++){
-              finalItem.appendChild(finalDoc.adoptNode(sourceItemList.item(j).cloneNode(true)));
+          String currElement = "";
+          Integer nodeDepth = 0;
+          while (reader.hasNext()) {
+            Integer eventType = reader.next();
+            switch(eventType) {
+              case XMLEvent.START_ELEMENT:
+                nodeDepth++;
+                currElement = reader.getLocalName();
+                if(fileNumber.equals(1) && nodeDepth.equals(1)){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    String attrVal = reader.getAttributeValue(attr);
+                    if (currElement.equals("project")){
+                      attrVal = "LXCOMPARE";
+                    }
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), "LXCOMPARE");
+                  }
+                }
+                if(fileNumber.equals(1) && nodeDepth.equals(2)){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    if(currElement.equals("object_type")){
+                      String attrName = reader.getAttributeLocalName(attr);
+                      if("firstitem".equals(attrName) || "items".equals(attrName)) {
+                        writer.writeAttribute(reader.getAttributeLocalName(attr), "0");
+                      } else {
+                        writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                      }
+                    } else {
+                      writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                    }
+                  }
+                }
+                if(fileNumber.equals(1) && nodeDepth.equals(3) && !currElement.equals("item")){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                  }
+                }
+                if(nodeDepth>3 || (nodeDepth.equals(3) && currElement.equals("item"))){
+                  writer.writeStartElement(currElement);
+                  for (Integer attr=0; attr<reader.getAttributeCount(); attr++) {
+                    writer.writeAttribute(reader.getAttributeLocalName(attr), reader.getAttributeValue(attr));
+                  }
+                }
+                break;
+              case XMLEvent.END_ELEMENT:
+                currElement = reader.getLocalName();
+                if(fileNumber.equals(1) && nodeDepth.equals(2) && currElement.equals("rundate")){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(fileCount) && nodeDepth.equals(1)){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(fileCount) && nodeDepth.equals(2) && currElement.equals("object_type")){
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                if(fileNumber.equals(1) && nodeDepth.equals(3) && !currElement.equals("item")){
+                  currElement = "";
+                  writer.writeEndElement();
+                } 
+                if(nodeDepth>3 || (nodeDepth.equals(3) && currElement.equals("item"))) {
+                  currElement = "";
+                  writer.writeEndElement();
+                }
+                nodeDepth--;
+                break;
+              case XMLEvent.CHARACTERS:
+                if (!reader.isWhiteSpace()) {
+                  if (fileNumber.equals(1) && nodeDepth.equals(2) && !currElement.equals("rundate")) {
+                    writer.writeCharacters(reader.getText());
+                  }
+                  if(fileNumber.equals(1) && nodeDepth.equals(3)){
+                    writer.writeCharacters(reader.getText());
+                  }
+                  if (nodeDepth > 3){
+                    writer.writeCharacters(reader.getText());
+                  }
+                }
+                break;
             }
           }
+          writer.flush();
+          reader.close();
         }
-        String targetDocPath = path + gitDir + entry.getKey() + ".XML";
-        DOMSource source = new DOMSource(finalDoc);
-        StreamResult result = new StreamResult(new File(targetDocPath));
-        TransformerFactory.newInstance().newTransformer().transform(source, result);
-      } catch (ParserConfigurationException | SAXException | IOException | DOMException | TransformerFactoryConfigurationError | TransformerException e) {
+        writer.close();
+      } catch (Exception e) {
         System.out.println(e.toString());
       }
-  }
+    }
+
    
     System.out.println("The project conversion has completed successfully.");
     System.out.println("The GIT files are located in the git conversion directory.");
@@ -170,9 +227,6 @@ public class psxmlconv {
     File filePath = new File(dir);
     if (filePath.exists()) {
       ArrayList<File> files = new ArrayList<>(Arrays.asList(filePath.listFiles()));
-      if (verboseFlag) {
-        System.out.println("Clearing directory " + dir);
-      }
       for (File f : files) {
         if (!f.delete()) {
           System.err.println("Could not clear " + dir + ", check file and directory permissions.");
@@ -190,17 +244,6 @@ public class psxmlconv {
       }
     }
     return true;
-  }
-
-  private static String get_formatted_file_number(String fileNumber) {
-    String newFileNumber;
-    if (fileNumber.length()>4) {
-      newFileNumber = fileNumber;
-    } 
-    else {
-      newFileNumber = "0000".substring(0, 4 - fileNumber.length()) + fileNumber;
-    }
-    return newFileNumber;
   }
   
   private static void copy_for_processing(ArrayList<File> files, String copy_path) {
@@ -238,6 +281,17 @@ public class psxmlconv {
     return directories;
   }
 
+   private static String get_formatted_file_number(String fileNumber) {
+    String newFileNumber;
+    if (fileNumber.length()>4) {
+      newFileNumber = fileNumber;
+    } 
+    else {
+      newFileNumber = "0000".substring(0, 4 - fileNumber.length()) + fileNumber;
+    }
+    return newFileNumber;
+  }
+  
   private static ArrayList get_ps_project_files(ArrayList<File> directories) {
     ArrayList<File> xml_files = new ArrayList<>();
     for (File dirs : directories) {
@@ -253,19 +307,35 @@ public class psxmlconv {
     }
     return xml_files;
   }
-
+  
   private static String get_pstype(String filename) {
     String tmpFileName = filename.substring(0, filename.lastIndexOf("_"));
     tmpFileName = tmpFileName.replaceAll("[-\\(\\)\\.]", "_");
     return tmpFileName;
   }
-
+  
+  private static TreeMap<String,Integer> get_unique_file_types(ArrayList<File> files){
+    /* Get unique file names */
+    String lastUniqName = "";
+    TreeMap<String,Integer> types = new TreeMap<>();
+    for (File f : files) {
+      String psType = get_pstype(f.getName());
+      if (lastUniqName.equals(psType)) {
+        types.put(psType, types.get(psType) + 1);
+      } else {
+        types.put(psType, 1);
+        lastUniqName = psType;
+      }
+    }
+    return types;
+  }
+  
   private static boolean project_exists(String p) {
     File project_file = new File(p + "project.xml");
     return project_file.exists();
   }
 
-  private static void show_help() {
+  private static void usage() {
     System.out.println("PeopleSoft XML to GIT Conversion Usage:");
     System.out.println("Required: Specify the path to the project directory to be converted.");
     System.out.println("[-d \\path to project directory\\]");
